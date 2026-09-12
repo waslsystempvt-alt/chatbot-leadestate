@@ -1,0 +1,26 @@
+node_modules/
+dist/
+dist-ssr/
+build/
+.env
+.env.local
+*.local
+
+# generated Prisma client
+apps/api/generated/
+
+*.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / os
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.sw?
+
+# cloudflare (legacy, kept for reference)
+.wrangler/

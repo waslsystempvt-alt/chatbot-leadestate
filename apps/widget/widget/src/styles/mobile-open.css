@@ -1,0 +1,86 @@
+/* Mobile chat open — wide panel, 65px from bottom (standalone + embedded microsites) */
+
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"] .widget-inner {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding:
+    12px
+    max(3vw, env(safe-area-inset-right, 0px))
+    calc(65px + env(safe-area-inset-bottom, 0px))
+    max(3vw, env(safe-area-inset-left, 0px));
+  pointer-events: auto;
+  z-index: 2147483000;
+}
+
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"] .widget {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: 100%;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"] .chat-shell {
+  width: min(94vw, calc(100vw - 12px)) !important;
+  min-width: 0;
+  max-width: min(94vw, calc(100vw - 12px)) !important;
+  height: min(72dvh, 520px, calc(100dvh - 100px)) !important;
+  min-height: min(360px, calc(100dvh - 120px)) !important;
+  max-height: min(72dvh, 520px, calc(100dvh - 100px)) !important;
+  border-radius: 20px !important;
+  border: 1px solid var(--border-soft) !important;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.04),
+    0 12px 32px -8px rgba(15, 23, 42, 0.14),
+    0 28px 56px -12px rgba(15, 23, 42, 0.18) !important;
+  margin: 0 auto;
+}
+
+/* Override legacy fullscreen mobile rules */
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"]:not([data-embedded="1"]) .widget,
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"][data-embedded="1"] .widget {
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+}
+
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"]:not([data-embedded="1"]) .chat-shell,
+.leadestate-chat-root[data-mobile-chat-layout="1"][data-chat-open="1"][data-embedded="1"] .chat-shell,
+.leadestate-chat-root[data-embedded="1"][data-chat-open="1"] .chat-shell {
+  width: min(94vw, calc(100vw - 12px)) !important;
+  min-width: 0;
+  max-width: min(94vw, calc(100vw - 12px)) !important;
+  height: min(72dvh, 520px, calc(100dvh - 100px)) !important;
+  min-height: min(360px, calc(100dvh - 120px)) !important;
+  max-height: min(72dvh, 520px, calc(100dvh - 100px)) !important;
+  border-radius: 20px !important;
+}
+
+/* Embedded: cancel corner-fixed .widget so panel uses widget-inner bottom offset */
+.leadestate-chat-root[data-embedded="1"][data-mobile-chat-layout="1"][data-chat-open="1"] .widget {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.leadestate-chat-root[data-embedded="1"][data-mobile-chat-layout="1"][data-chat-open="1"] .widget-inner {
+  align-items: flex-end !important;
+  justify-content: center !important;
+  padding-bottom: calc(65px + env(safe-area-inset-bottom, 0px)) !important;
+}

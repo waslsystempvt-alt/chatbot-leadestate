@@ -1,0 +1,11 @@
+{
+  "name": "leadestate-chatbot",
+  "private": true,
+  "scripts": {
+    "build": "cd widget && npm install && npm run build",
+    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=leadestate-chatbot"
+  },
+  "devDependencies": {
+    "wrangler": "^4.14.0"
+  }
+}

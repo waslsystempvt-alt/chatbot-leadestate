@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum BrokerStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  BROKER_ADMIN
+  BROKER_AGENT
+}
+
+enum MicrositeStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum LeadDeliveryMethod {
+  WEBHOOK
+  DASHBOARD_NOTIFICATION
+}
+
+enum LeadDeliveryStatus {
+  DELIVERED
+  FAILED
+}
+
+enum NotificationType {
+  EXPIRY_WARNING
+  EXPIRED
+  STATUS_CHANGE
+  NEW_LEAD
+}
+
+enum ChatEventType {
+  OPENED
+  STEP_COMPLETED
+  SUBMITTED
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+/// A real-estate brokerage — the tenant. Every scoped table below carries
+/// brokerId so a single shared Postgres schema can serve every broker.
+model Broker {
+  id                 String       @id @default(cuid())
+  name               String
+  slug               String       @unique
+  status             BrokerStatus @default(ACTIVE)
+  /// Manual "billing-lite": no payment gateway, just a date the super admin
+  /// sets/extends. A scheduled job warns before this date and flips status
+  /// to EXPIRED on it.
+  subscriptionEndsAt DateTime?
+  plan               String? // free-text label for now (e.g. "starter")
+  brandingDefaults   Json? // default theme applied to new microsites
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  users            User[]
+  microsites       Microsite[]
+  chatFlows        ChatFlow[]
+  leadDeliveryLogs LeadDeliveryLog[]
+  notifications    Notification[]
+
+  @@index([status, subscriptionEndsAt])
+}
+
+/// Platform + broker-team users. brokerId is null only for SUPER_ADMIN.
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         UserRole
+  brokerId     String?
+  broker       Broker?   @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  invitedAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@index([brokerId])
+}
+
+// ---------------------------------------------------------------------------
+// Microsites & chatbot flow
+// ---------------------------------------------------------------------------
+
+/// One microsite = one real-estate project website that embeds the widget.
+model Microsite {
+  id             String          @id @default(cuid())
+  brokerId       String
+  broker         Broker          @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  slug           String // the "ms" the widget reports on every lead
+  projectName    String
+  agentName      String?
+  /// Domains allowed to embed this microsite's widget (origin check on the
+  /// public config/lead endpoints). Empty = allow any (legacy behaviour).
+  allowedDomains String[]        @default([])
+  themeConfig    Json // { primary, avatar, ... }
+  activeFlowId   String?
+  activeFlow     ChatFlow?       @relation("ActiveFlow", fields: [activeFlowId], references: [id])
+  status         MicrositeStatus @default(ACTIVE)
+
+  /// Pass-through CRM connector: every lead captured on this microsite is
+  /// POSTed here immediately (any CRM, Zapier/Make/Pabbly step, etc.) —
+  /// LeadEstate never stores the lead's name/phone itself. Null/inactive =
+  /// falls back to emailing the broker admin instead (see LeadsService).
+  crmWebhookUrl    String?
+  crmWebhookSecret String? // HMAC-signs the outgoing payload so the broker can verify it came from us
+  crmWebhookActive Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chatFlows        ChatFlow[]        @relation("MicrositeFlows")
+  leadDeliveryLogs LeadDeliveryLog[]
+  chatEvents       ChatEvent[]
+  notifications    Notification[]
+
+  @@unique([brokerId, slug])
+  @@index([brokerId])
+}
+
+/// A conversation flow definition. micrositeId null = broker-level default
+/// template new microsites start from.
+model ChatFlow {
+  id          String     @id @default(cuid())
+  brokerId    String
+  broker      Broker     @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  micrositeId String?
+  microsite   Microsite? @relation("MicrositeFlows", fields: [micrositeId], references: [id], onDelete: Cascade)
+  name        String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  versions      ChatFlowVersion[]
+  activeOnSites Microsite[]       @relation("ActiveFlow")
+
+  @@index([brokerId])
+  @@index([micrositeId])
+}
+
+/// Immutable, versioned snapshot of a flow's steps. Editing always creates/
+/// updates the current DRAFT version; "publish" stamps publishedAt and that
+/// becomes the version served to the public config endpoint. This lets a
+/// broker edit safely without breaking the live widget mid-edit.
+model ChatFlowVersion {
+  id          String    @id @default(cuid())
+  chatFlowId  String
+  chatFlow    ChatFlow  @relation(fields: [chatFlowId], references: [id], onDelete: Cascade)
+  version     Int
+  /// Step graph: Record<stepId, { type, prompt, options: [{ label, nextStepId, cta? }] }>
+  /// Stored as a map (not an array) for O(1) step lookup during editing and
+  /// widget playback; validated with a DFS reachability pass before publish.
+  steps       Json
+  isDraft     Boolean   @default(true)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([chatFlowId, version])
+  @@index([chatFlowId, isDraft])
+}
+
+// ---------------------------------------------------------------------------
+// Lead delivery — deliberately NOT a CRM. LeadEstate is a pass-through: a
+// captured lead's name/phone/email are held in memory only for the length
+// of the delivery attempt (webhook POST or fallback email) and are never
+// written here. This table is a redacted delivery log only — enough to see
+// "did broker X's leads actually arrive," never the lead's identity.
+// ---------------------------------------------------------------------------
+
+model LeadDeliveryLog {
+  id           String             @id @default(cuid())
+  brokerId     String
+  broker       Broker             @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  micrositeId  String
+  microsite    Microsite          @relation(fields: [micrositeId], references: [id], onDelete: Cascade)
+  method       LeadDeliveryMethod
+  status       LeadDeliveryStatus
+  attempts     Int                @default(1)
+  errorMessage String?
+  // Non-identifying attribution only — no name/phone/email ever stored.
+  sourceAction String?
+  utmSource    String?
+  utmMedium    String?
+  utmCampaign  String?
+  createdAt    DateTime           @default(now())
+
+  @@index([brokerId, createdAt])
+  @@index([micrositeId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, analytics, audit
+// ---------------------------------------------------------------------------
+
+/// Dashboard-only notifications — there is no email/SMS sender in this
+/// system. A broker (or the super admin, for EXPIRY_WARNING/EXPIRED) sees
+/// these in their dashboard and, for NEW_LEAD ones, can forward the details
+/// via their own mail client (mailto:) — LeadEstate never sends mail itself.
+model Notification {
+  id          String           @id @default(cuid())
+  brokerId    String
+  broker      Broker           @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  micrositeId String?
+  microsite   Microsite?       @relation(fields: [micrositeId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  /// NEW_LEAD payload carries the lead's name/phone transiently so it can be
+  /// forwarded — cleared once marked read (see NotificationsService).
+  payload     Json?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([brokerId, createdAt])
+  @@index([brokerId, readAt])
+}
+
+/// Every super-admin action (activate/deactivate/expire a broker,
+/// impersonation) and every broker config change is written here.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id])
+  action      String // e.g. "broker.activate", "chatflow.publish"
+  targetType  String // e.g. "Broker", "ChatFlow"
+  targetId    String
+  meta        Json?
+  createdAt   DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@index([actorUserId, createdAt])
+}
+
+/// Lightweight funnel tracking for the widget (opened -> step -> submitted).
+model ChatEvent {
+  id          String        @id @default(cuid())
+  micrositeId String
+  microsite   Microsite     @relation(fields: [micrositeId], references: [id], onDelete: Cascade)
+  sessionId   String
+  event       ChatEventType
+  stepId      String?
+  createdAt   DateTime      @default(now())
+
+  @@index([micrositeId, createdAt])
+  @@index([sessionId])
+}

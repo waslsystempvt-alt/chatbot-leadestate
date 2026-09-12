@@ -1,0 +1,17 @@
+{
+  "name": "leadestate",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "apps/widget/widget",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace apps/api",
+    "dev:widget": "npm run dev --workspace apps/widget/widget",
+    "build:widget": "npm run build --workspace apps/widget/widget",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down"
+  }
+}
