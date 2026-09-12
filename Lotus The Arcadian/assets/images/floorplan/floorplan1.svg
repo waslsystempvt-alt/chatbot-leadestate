@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="900" height="600">
+  <rect width="900" height="600" fill="#f4efe7"/>
+  <g fill="none" stroke="#a96e2a" stroke-width="3">
+    <rect x="40" y="40" width="820" height="520"/>
+    <line x1="40" y1="270" x2="380" y2="270"/>
+    <line x1="380" y1="40" x2="380" y2="560"/>
+    <line x1="380" y1="330" x2="640" y2="330"/>
+    <line x1="640" y1="40" x2="640" y2="560"/>
+    <line x1="180" y1="270" x2="180" y2="560"/>
+  </g>
+  <g fill="#c6a664" opacity="0.45">
+    <rect x="70" y="70" width="90" height="10"/>
+    <rect x="410" y="70" width="90" height="10"/>
+    <rect x="670" y="70" width="90" height="10"/>
+    <rect x="410" y="360" width="90" height="10"/>
+    <rect x="670" y="360" width="90" height="10"/>
+  </g>
+  <g font-family="sans-serif" font-size="18" fill="#8f5c1e" text-anchor="middle">
+    <text x="210" y="160">LIVING / DINING</text>
+    <text x="510" y="190">MASTER BEDROOM</text>
+    <text x="750" y="190">BEDROOM 2</text>
+    <text x="510" y="450">BEDROOM 3</text>
+    <text x="750" y="450">KITCHEN</text>
+    <text x="110" y="420">DECK</text>
+    <text x="280" y="420">FOYER</text>
+  </g>
+  <text x="450" y="300" font-family="sans-serif" font-size="30" fill="#8f5c1e" text-anchor="middle">3 Bed &#183; Carpet Area 1300 sq.ft.</text>
+  <text x="450" y="580" font-family="sans-serif" font-size="15" fill="#727272" text-anchor="middle">Indicative layout - not to scale</text>
+</svg>

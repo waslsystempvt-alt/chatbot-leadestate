@@ -29,6 +29,14 @@ class ApiError extends Error {
   }
 }
 
+/** App.tsx registers this once on mount so a stale/expired token anywhere
+ * (not just on login) drops the user back to the sign-in screen instead of
+ * leaving a half-broken "logged in" page with failed requests. */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 async function request<T>(path: string, token: string | null, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -40,6 +48,12 @@ async function request<T>(path: string, token: string | null, init?: RequestInit
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // Only a previously-authenticated request going 401 means the session
+    // itself is dead (expired/invalid token) — a 401 on the login call
+    // itself is just "wrong password" and shouldn't log anyone out.
+    if (res.status === 401 && token) {
+      onUnauthorized?.();
+    }
     throw new ApiError(body.message ?? `Request failed (${res.status})`, res.status);
   }
   return body as T;
@@ -83,6 +97,12 @@ export interface ThemeConfig {
   agentName?: string;
 }
 
+export interface CrmConnectorRef {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
 export interface Microsite {
   id: string;
   slug: string;
@@ -91,10 +111,30 @@ export interface Microsite {
   allowedDomains: string[];
   themeConfig: ThemeConfig;
   status: "ACTIVE" | "PAUSED";
-  crmWebhookUrl: string | null;
-  crmWebhookSecret: string | null;
-  crmWebhookActive: boolean;
+  crmConnectors: CrmConnectorRef[];
   createdAt: string;
+}
+
+export interface CrmConnector {
+  id: string;
+  name: string;
+  webhookUrl: string;
+  method: string;
+  headers: Record<string, string> | null;
+  payloadTemplate: Record<string, unknown> | null;
+  webhookSecret: string;
+  isActive: boolean;
+  createdAt: string;
+  _count?: { microsites: number };
+}
+
+export interface WebhookTestResult {
+  ok: boolean;
+  attempts: number;
+  status?: number;
+  responseSnippet?: string;
+  error?: string;
+  renderedPayload: unknown;
 }
 
 export interface DeliveryLog {
@@ -104,6 +144,7 @@ export interface DeliveryLog {
   attempts: number;
   errorMessage: string | null;
   sourceAction: string | null;
+  crmConnectorName: string | null;
   createdAt: string;
 }
 
@@ -128,8 +169,6 @@ export function updateMicrosite(
     projectName: string;
     agentName: string;
     themeConfig: ThemeConfig;
-    crmWebhookUrl: string;
-    crmWebhookActive: boolean;
   }>,
 ) {
   return request<Microsite>(`/microsites/${id}`, token, {
@@ -138,8 +177,62 @@ export function updateMicrosite(
   });
 }
 
+export function attachCrmConnector(token: string, micrositeId: string, connectorId: string) {
+  return request<Microsite>(`/microsites/${micrositeId}/crm-connectors/${connectorId}`, token, {
+    method: "POST",
+  });
+}
+
+export function detachCrmConnector(token: string, micrositeId: string, connectorId: string) {
+  return request<Microsite>(`/microsites/${micrositeId}/crm-connectors/${connectorId}`, token, {
+    method: "DELETE",
+  });
+}
+
 export function listDeliveries(token: string, micrositeId: string) {
   return request<DeliveryLog[]>(`/microsites/${micrositeId}/deliveries`, token);
+}
+
+export function listCrmConnectors(token: string) {
+  return request<CrmConnector[]>("/crm-connectors", token);
+}
+
+export interface CrmConnectorInput {
+  name: string;
+  webhookUrl: string;
+  method?: string;
+  headers?: Record<string, string>;
+  payloadTemplate?: Record<string, unknown>;
+  isActive?: boolean;
+}
+
+export function createCrmConnector(token: string, dto: CrmConnectorInput) {
+  return request<CrmConnector>("/crm-connectors", token, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function updateCrmConnector(token: string, id: string, dto: Partial<CrmConnectorInput>) {
+  return request<CrmConnector>(`/crm-connectors/${id}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function deleteCrmConnector(token: string, id: string) {
+  return request<{ ok: true }>(`/crm-connectors/${id}`, token, { method: "DELETE" });
+}
+
+export function testCrmConnector(
+  token: string,
+  id: string,
+  dto: { fullName?: string; phone?: string; sourceAction?: string },
+) {
+  return request<WebhookTestResult>(`/crm-connectors/${id}/test`, token, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
 }
 
 export interface NewLeadPayload {

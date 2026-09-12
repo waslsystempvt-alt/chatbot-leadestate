@@ -74,6 +74,7 @@ model Broker {
   users            User[]
   microsites       Microsite[]
   chatFlows        ChatFlow[]
+  crmConnectors    CrmConnector[]
   leadDeliveryLogs LeadDeliveryLog[]
   notifications    Notification[]
 
@@ -118,13 +119,12 @@ model Microsite {
   activeFlow     ChatFlow?       @relation("ActiveFlow", fields: [activeFlowId], references: [id])
   status         MicrositeStatus @default(ACTIVE)
 
-  /// Pass-through CRM connector: every lead captured on this microsite is
-  /// POSTed here immediately (any CRM, Zapier/Make/Pabbly step, etc.) —
-  /// LeadEstate never stores the lead's name/phone itself. Null/inactive =
-  /// falls back to emailing the broker admin instead (see LeadsService).
-  crmWebhookUrl    String?
-  crmWebhookSecret String? // HMAC-signs the outgoing payload so the broker can verify it came from us
-  crmWebhookActive Boolean @default(false)
+  /// Which of the broker's CRM connectors leads on this microsite fan out
+  /// to — many-to-many both ways: one connector is reusable across every
+  /// microsite a broker has, AND one microsite can push to several CRMs at
+  /// once (e.g. Blox for the sales team + an internal Zapier catch hook).
+  /// Empty = no CRM connected yet, falls back to a dashboard notification.
+  crmConnectors CrmConnector[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -135,6 +135,38 @@ model Microsite {
   notifications    Notification[]
 
   @@unique([brokerId, slug])
+  @@index([brokerId])
+}
+
+/// A broker's own CRM, set up once and reusable across any number of their
+/// microsites (client 1's Blox connector, client 2's HubSpot connector,
+/// etc. — each fully independent, each shareable across that broker's
+/// projects, and each microsite can attach more than one). LeadsService
+/// renders `payloadTemplate` (null = the default LeadEstate shape) against
+/// the captured lead's fields and POSTs/PUTs/PATCHes it to `webhookUrl`
+/// with `headers` plus an `x-leadestate-signature` HMAC (via
+/// `webhookSecret`) so the receiving CRM can verify it came from us.
+model CrmConnector {
+  id              String   @id @default(cuid())
+  brokerId        String
+  broker          Broker   @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  /// broker's own label, e.g. "Blox CRM", "HubSpot" — purely for their UI
+  name            String
+  webhookUrl      String
+  /// "POST" | "PUT" | "PATCH"
+  method          String   @default("POST")
+  /// custom outgoing headers, e.g. { "Authorization": "Bearer ..." }
+  headers         Json?
+  /// arbitrary JSON with "{{variable}}" placeholders — see
+  /// packages/shared-types renderTemplate(). Null = default lead shape.
+  payloadTemplate Json?
+  webhookSecret   String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  microsites Microsite[]
+
   @@index([brokerId])
 }
 
@@ -187,21 +219,24 @@ model ChatFlowVersion {
 // ---------------------------------------------------------------------------
 
 model LeadDeliveryLog {
-  id           String             @id @default(cuid())
-  brokerId     String
-  broker       Broker             @relation(fields: [brokerId], references: [id], onDelete: Cascade)
-  micrositeId  String
-  microsite    Microsite          @relation(fields: [micrositeId], references: [id], onDelete: Cascade)
-  method       LeadDeliveryMethod
-  status       LeadDeliveryStatus
-  attempts     Int                @default(1)
-  errorMessage String?
+  id               String             @id @default(cuid())
+  brokerId         String
+  broker           Broker             @relation(fields: [brokerId], references: [id], onDelete: Cascade)
+  micrositeId      String
+  microsite        Microsite          @relation(fields: [micrositeId], references: [id], onDelete: Cascade)
+  /// Which connector handled it, if any — kept even if the connector is
+  /// later renamed/deleted (no relation, just a label snapshot).
+  crmConnectorName String?
+  method           LeadDeliveryMethod
+  status           LeadDeliveryStatus
+  attempts         Int                @default(1)
+  errorMessage     String?
   // Non-identifying attribution only — no name/phone/email ever stored.
-  sourceAction String?
-  utmSource    String?
-  utmMedium    String?
-  utmCampaign  String?
-  createdAt    DateTime           @default(now())
+  sourceAction     String?
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  createdAt        DateTime           @default(now())
 
   @@index([brokerId, createdAt])
   @@index([micrositeId, createdAt])

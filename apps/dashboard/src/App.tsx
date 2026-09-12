@@ -6,6 +6,7 @@ import {
   createBroker,
   listBrokers,
   login,
+  setUnauthorizedHandler,
   updateBrokerStatus,
 } from "./api";
 import { BrokerAdminView } from "./BrokerAdminView";
@@ -41,12 +42,22 @@ export default function App() {
     setUser(nextUser);
   }
 
+  const [sessionExpired, setSessionExpired] = useState(false);
+
   function handleLogout() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);
   }
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setSessionExpired(true);
+      handleLogout();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   return (
     <div className="shell">
@@ -65,7 +76,13 @@ export default function App() {
 
       <main>
         {!token || !user ? (
-          <LoginView onLoggedIn={handleLoggedIn} />
+          <LoginView
+            onLoggedIn={(t, u) => {
+              setSessionExpired(false);
+              handleLoggedIn(t, u);
+            }}
+            sessionExpired={sessionExpired}
+          />
         ) : user.role === "SUPER_ADMIN" ? (
           <SuperAdminView token={token} />
         ) : user.role === "BROKER_ADMIN" ? (
@@ -80,8 +97,10 @@ export default function App() {
 
 function LoginView({
   onLoggedIn,
+  sessionExpired,
 }: {
   onLoggedIn: (token: string, user: AuthedUser) => void;
+  sessionExpired?: boolean;
 }) {
   const [email, setEmail] = useState("admin@leadestate.local");
   const [password, setPassword] = useState("");
@@ -106,6 +125,9 @@ function LoginView({
     <div className="center">
       <form className="card" onSubmit={handleSubmit}>
         <h1>Sign in</h1>
+        {sessionExpired && (
+          <div className="error">Your session expired — please sign in again.</div>
+        )}
         <p className="hint">
           Super admin default: <code>admin@leadestate.local</code> /{" "}
           <code>changeme123</code> (from <code>npm run prisma:seed</code>)
@@ -384,7 +406,7 @@ function CreateBrokerForm({
         <input
           value={slug}
           onChange={(e) => setSlug(e.target.value.toLowerCase())}
-          pattern="[a-z0-9-]+"
+          pattern="[a-z0-9\-]+"
           placeholder="homesfy"
           required
         />

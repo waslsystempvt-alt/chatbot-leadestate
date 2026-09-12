@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5174"
   },
   "dependencies": {
+    "@leadestate/shared-types": "*",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

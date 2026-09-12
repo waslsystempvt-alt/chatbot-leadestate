@@ -1,10 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { CreateMicrositeDto } from "./dto/create-microsite.dto";
 import { UpdateMicrositeDto } from "./dto/update-microsite.dto";
+
+const CRM_CONNECTOR_SELECT = { id: true, name: true, isActive: true } as const;
 
 @Injectable()
 export class MicrositesService {
@@ -47,21 +48,21 @@ export class MicrositesService {
     return this.prisma.microsite.findMany({
       where: { brokerId },
       orderBy: { createdAt: "desc" },
+      include: { crmConnectors: { select: CRM_CONNECTOR_SELECT } },
     });
   }
 
   async findOneForBroker(brokerId: string, id: string) {
-    const microsite = await this.prisma.microsite.findFirst({ where: { id, brokerId } });
+    const microsite = await this.prisma.microsite.findFirst({
+      where: { id, brokerId },
+      include: { crmConnectors: { select: CRM_CONNECTOR_SELECT } },
+    });
     if (!microsite) throw new NotFoundException("Microsite not found");
     return microsite;
   }
 
   async update(brokerId: string, id: string, dto: UpdateMicrositeDto, actorUserId: string) {
-    const existing = await this.findOneForBroker(brokerId, id);
-
-    // First time a webhook URL is set, mint a signing secret so the broker's
-    // endpoint can verify the payload really came from us (see LeadsService).
-    const needsSecret = !!dto.crmWebhookUrl && !existing.crmWebhookSecret;
+    await this.findOneForBroker(brokerId, id);
 
     const microsite = await this.prisma.microsite.update({
       where: { id },
@@ -72,10 +73,8 @@ export class MicrositesService {
         ...(dto.themeConfig !== undefined
           ? { themeConfig: dto.themeConfig as Prisma.InputJsonValue }
           : {}),
-        ...(dto.crmWebhookUrl !== undefined ? { crmWebhookUrl: dto.crmWebhookUrl } : {}),
-        ...(dto.crmWebhookActive !== undefined ? { crmWebhookActive: dto.crmWebhookActive } : {}),
-        ...(needsSecret ? { crmWebhookSecret: randomBytes(24).toString("hex") } : {}),
       },
+      include: { crmConnectors: { select: CRM_CONNECTOR_SELECT } },
     });
 
     await this.audit.log({
@@ -83,10 +82,53 @@ export class MicrositesService {
       action: "microsite.update",
       targetType: "Microsite",
       targetId: microsite.id,
-      meta: {
-        crmWebhookActive: microsite.crmWebhookActive,
-        crmWebhookConfigured: !!microsite.crmWebhookUrl,
-      },
+    });
+
+    return microsite;
+  }
+
+  /** Attaches one of the broker's own CRM connectors to this microsite.
+   * Many-to-many — a microsite can have several connectors (fan-out), and
+   * a connector can already be attached to other microsites (reuse). */
+  async attachConnector(brokerId: string, micrositeId: string, connectorId: string, actorUserId: string) {
+    await this.findOneForBroker(brokerId, micrositeId);
+    const connector = await this.prisma.crmConnector.findFirst({
+      where: { id: connectorId, brokerId },
+    });
+    if (!connector) throw new NotFoundException("Unknown CRM connector");
+
+    const microsite = await this.prisma.microsite.update({
+      where: { id: micrositeId },
+      data: { crmConnectors: { connect: { id: connectorId } } },
+      include: { crmConnectors: { select: CRM_CONNECTOR_SELECT } },
+    });
+
+    await this.audit.log({
+      actorUserId,
+      action: "microsite.crmConnector.attach",
+      targetType: "Microsite",
+      targetId: micrositeId,
+      meta: { connectorId },
+    });
+
+    return microsite;
+  }
+
+  async detachConnector(brokerId: string, micrositeId: string, connectorId: string, actorUserId: string) {
+    await this.findOneForBroker(brokerId, micrositeId);
+
+    const microsite = await this.prisma.microsite.update({
+      where: { id: micrositeId },
+      data: { crmConnectors: { disconnect: { id: connectorId } } },
+      include: { crmConnectors: { select: CRM_CONNECTOR_SELECT } },
+    });
+
+    await this.audit.log({
+      actorUserId,
+      action: "microsite.crmConnector.detach",
+      targetType: "Microsite",
+      targetId: micrositeId,
+      meta: { connectorId },
     });
 
     return microsite;

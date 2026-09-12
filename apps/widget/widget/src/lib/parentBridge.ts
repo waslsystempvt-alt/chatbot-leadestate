@@ -9,8 +9,13 @@ export interface LeadSubmittedInfo {
 
 export function notifyParentLeadSubmitted(info: LeadSubmittedInfo): void {
   try {
-    if (!window.parent || window.parent === window) return;
-    window.parent.postMessage(
+    // Leftover from the old iframe embed: this used to bail out when there
+    // was no parent frame. The widget now mounts directly on the host page
+    // (no iframe), so window.parent === window is the normal case — and
+    // postMessage to yourself still dispatches a real "message" event,
+    // which is what embed.js listens for to fire the redirect + GTM push.
+    // The old early-return silently broke both of those.
+    window.postMessage(
       {
         type: "leadestate:lead",
         ok: true,

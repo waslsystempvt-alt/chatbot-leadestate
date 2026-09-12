@@ -9,6 +9,7 @@ import { AuditModule } from "./audit/audit.module";
 import { MicrositesModule } from "./microsites/microsites.module";
 import { LeadsModule } from "./leads/leads.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { CrmConnectorsModule } from "./crm-connectors/crm-connectors.module";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     AuthModule,
     BrokersModule,
     MicrositesModule,
+    CrmConnectorsModule,
     NotificationsModule,
     LeadsModule,
   ],

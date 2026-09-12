@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
@@ -50,5 +60,23 @@ export class MicrositesController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.microsites.update(this.requireBrokerId(user), id, dto, user.id);
+  }
+
+  @Post(":id/crm-connectors/:connectorId")
+  attachConnector(
+    @Param("id") id: string,
+    @Param("connectorId") connectorId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.microsites.attachConnector(this.requireBrokerId(user), id, connectorId, user.id);
+  }
+
+  @Delete(":id/crm-connectors/:connectorId")
+  detachConnector(
+    @Param("id") id: string,
+    @Param("connectorId") connectorId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.microsites.detachConnector(this.requireBrokerId(user), id, connectorId, user.id);
   }
 }

@@ -124,3 +124,141 @@ export const LeadSubmissionSchema = z.object({
   sourceAction: z.string().optional(),
 });
 export type LeadSubmission = z.infer<typeof LeadSubmissionSchema>;
+
+// ---------------------------------------------------------------------------
+// CRM webhook templating — a connector's payloadTemplate is arbitrary JSON
+// containing "{{variable}}" placeholders. renderTemplate() interpolates it
+// against a flat variable map, recursively, so a broker can shape the exact
+// JSON their CRM expects (Blox, HubSpot, a Zapier catch hook, anything)
+// instead of being locked into one fixed lead shape.
+// ---------------------------------------------------------------------------
+
+export const WEBHOOK_METHODS = ["POST", "PUT", "PATCH"] as const;
+export type WebhookMethod = (typeof WEBHOOK_METHODS)[number];
+
+/** Every variable a payload template (or header value) can reference. */
+export const TEMPLATE_VARIABLES = [
+  "micrositeId",
+  "fullName",
+  "phone",
+  "projectName",
+  "brokerName",
+  "agentName",
+  "configuration",
+  "sourceAction",
+  "utmSource",
+  "utmMedium",
+  "utmCampaign",
+  "utmTerm",
+  "utmContent",
+  "gclid",
+  "fbclid",
+  "pageUrl",
+  "timestamp",
+] as const;
+export type TemplateVariableName = (typeof TEMPLATE_VARIABLES)[number];
+
+export type TemplateVariables = Partial<Record<TemplateVariableName, string>>;
+
+const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+
+function interpolateString(input: string, variables: TemplateVariables): string {
+  return input.replace(PLACEHOLDER_RE, (_match, name: string) => variables[name as TemplateVariableName] ?? "");
+}
+
+/**
+ * Recursively walks a JSON value, replacing "{{var}}" placeholders inside
+ * every string it finds (object keys, array entries, nested objects — the
+ * whole tree), and returns a plain JSON value with the same shape as the
+ * template. A string that is *exactly* one placeholder (e.g. "{{phone}}")
+ * is a special case: it resolves to the raw variable value rather than a
+ * stringified substitution, so numeric-looking values stay unquoted-clean
+ * and missing variables become "" rather than the literal text "{{x}}".
+ */
+export function renderTemplate(template: unknown, variables: TemplateVariables): unknown {
+  if (typeof template === "string") {
+    const wholeMatch = template.match(/^\{\{\s*([a-zA-Z0-9_]+)\s*\}\}$/);
+    if (wholeMatch) return variables[wholeMatch[1] as TemplateVariableName] ?? "";
+    return interpolateString(template, variables);
+  }
+  if (Array.isArray(template)) {
+    return template.map((item) => renderTemplate(item, variables));
+  }
+  if (template && typeof template === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(template as Record<string, unknown>)) {
+      out[interpolateString(key, variables)] = renderTemplate(value, variables);
+    }
+    return out;
+  }
+  return template;
+}
+
+export interface WebhookPreset {
+  id: string;
+  label: string;
+  method: WebhookMethod;
+  headers: Record<string, string>;
+  payloadTemplate: Record<string, unknown>;
+}
+
+/**
+ * Built-in starting points for the dashboard's "new connection" form.
+ * "leadestate-standard" reproduces today's fixed lead shape (what every
+ * connector sent before custom templates existed) so it stays the default.
+ * "blox" mirrors the real Blox Marketing Leads API payload we found wired
+ * into an actual client site (apps/widget's Lotus test) — first_name,
+ * project, project_name, comment, contact, source, request_url, etc.
+ * We deliberately don't ship presets for CRMs we haven't verified a real
+ * payload shape for (Salesforce/LeadSquared/Zoho) — better to leave the
+ * Custom template empty than guess a wrong schema.
+ */
+export const WEBHOOK_PRESETS: WebhookPreset[] = [
+  {
+    id: "leadestate-standard",
+    label: "LeadEstate standard (default)",
+    method: "POST",
+    headers: {},
+    payloadTemplate: {
+      micrositeId: "{{micrositeId}}",
+      fullName: "{{fullName}}",
+      phone: "{{phone}}",
+      projectName: "{{projectName}}",
+      brokerName: "{{brokerName}}",
+      agentName: "{{agentName}}",
+      configuration: "{{configuration}}",
+      sourceAction: "{{sourceAction}}",
+      utmSource: "{{utmSource}}",
+      utmMedium: "{{utmMedium}}",
+      utmCampaign: "{{utmCampaign}}",
+      utmTerm: "{{utmTerm}}",
+      utmContent: "{{utmContent}}",
+      gclid: "{{gclid}}",
+      fbclid: "{{fbclid}}",
+      pageUrl: "{{pageUrl}}",
+      timestamp: "{{timestamp}}",
+    },
+  },
+  {
+    id: "blox",
+    label: "Blox Marketing Leads API",
+    method: "POST",
+    headers: { Authorization: "Bearer YOUR_BLOX_TOKEN" },
+    payloadTemplate: {
+      first_name: "{{fullName}}",
+      contact: "{{phone}}",
+      request_url: "{{pageUrl}}",
+      source: "{{utmSource}}",
+      utm_campaign: "{{utmCampaign}}",
+      comment: "{{sourceAction}}",
+      project_name: "{{projectName}}",
+    },
+  },
+  {
+    id: "custom",
+    label: "Custom schema",
+    method: "POST",
+    headers: {},
+    payloadTemplate: { fullName: "{{fullName}}", phone: "{{phone}}" },
+  },
+];

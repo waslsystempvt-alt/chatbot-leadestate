@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title data-field="meta_title">Lotus Arcadian Juhu | 3 &amp; 4 BHK from ₹8.50 Cr</title>
+  <meta name="description" data-field="meta_description" content="Discover Lotus Arcadian Juhu — premium 3 &amp; 4 BHK residences with high-end finishes, rooftop amenities and sea views from ₹8.50 Cr.*" />
+  <meta name="keywords" data-field="meta_keywords" content="Lotus Arcadian, Lotus Arcadian Juhu, Lotus Arcadian Juhu price, Lotus Arcadian 3 BHK, Lotus Arcadian 4 BHK, 3 BHK in Juhu, 4 BHK in Juhu, luxury apartments in Juhu, luxury flats in Juhu, premium residences in Juhu, Juhu luxury homes, Lotus Developers Juhu, flats near Juhu Beach, sea view apartments Juhu, luxury property in Mumbai, premium property in Juhu, 3 BHK Juhu price, 4 BHK Juhu price" />
+  <meta name="robots" content="noindex, follow" />
+  <meta name="googlebot" content="noindex, follow" />
+  <meta name="theme-color" content="#102A47" />
+  <link rel="canonical" href="https://www.the-riviera-worli.com/thankyou.html" />
+  <link rel="icon" href="assets/images/logo/favicon.png" type="image/png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #0b2339;
+      color: #fff;
+      text-align: center;
+    }
+    .thankyou-logo {
+      display: block;
+      width: auto;
+      height: 56px;
+      max-width: 220px;
+      margin: 0 auto 24px;
+      object-fit: contain;
+    }
+    .card {
+      max-width: 480px;
+      padding: 40px 32px;
+      border: 1px solid rgba(212, 177, 106, 0.4);
+      border-radius: 16px;
+      background: rgba(16, 42, 71, 0.6);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+    }
+    h1 {
+      font-family: 'Playfair Display', serif;
+      color: #D4B16A;
+      font-size: 1.75rem;
+      margin-bottom: 16px;
+    }
+    p {
+      color: rgba(255, 255, 255, 0.82);
+      line-height: 1.65;
+      margin-bottom: 28px;
+      font-size: 0.95rem;
+    }
+    .backBtn {
+      display: inline-block;
+      background: #D4B16A;
+      color: #102A47;
+      font-weight: 700;
+      padding: 14px 32px;
+      border-radius: 8px;
+      text-decoration: none;
+      letter-spacing: 0.04em;
+    }
+    .backBtn:hover { background: #DFC07E; }
+    .help-item {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    .whatsapp_url {
+      background: #00e820;
+      color: #fff;
+      padding: 5px 15px;
+      border-radius: 5px;
+      border: 0;
+      justify-content: center;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+    }
+    .phone_url {
+      background: #0955e8;
+      color: #fff;
+      padding: 5px 15px;
+      border-radius: 5px;
+      border: 0;
+      justify-content: center;
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>  
+<div class="card">
+    <img
+      class="thankyou-logo"
+      src="assets/images/logo/logo.webp"
+      alt="Project logo"
+      width="220"
+      height="56"
+      decoding="async"
+    />
+    <h1>Thank You</h1>
+    <p><strong id="userPhone"></strong></p>
+    <p>Your enquiry has been received. Our team will contact you shortly with project details, pricing, and visit options.</p>
+    <div class="helping">
+      <h4>FOR IMMEDIATE ASSISTANCE</h4>
+      <div class="help-item">
+          <a href="tel:" class="btn btn-primary phone_url IVR_Phone_No_Url"><img src="assets/images/icons/phoneIcoon.gif"
+                  alt="Call" width="30" height="30"><span class="phone_no "></span></a>
+          <a href="" class="btn btn-success whatsapp_url">Chat On <img
+                  src="assets/images/icons/whatsappIcon.gif" alt="whatsapp" width="30" height="30"></a>
+      </div>
+  </div>
+    <a href="index.html" class="backBtn">Back to Homepage</a>
+  </div>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+  const submittedPhone = localStorage.getItem("submittedPhone");
+  const submittedCountryCode = localStorage.getItem("submittedCountryCode");
+
+
+  if (submittedPhone && submittedCountryCode) {
+    let cleanPhone = submittedPhone.replace(/\D/g, '');
+    const fullPhone = `${submittedCountryCode}${cleanPhone}`;
+    const phoneElement = document.getElementById("userPhone");
+
+
+    if (phoneElement) {
+      // Set the phone number as text content
+      phoneElement.textContent = fullPhone;
+     
+      // Store as data attribute for easy access
+      phoneElement.setAttribute('data-phone', fullPhone);
+     
+      // Store in a global variable for easy access
+      window.userPhoneNumber = fullPhone;
+    }
+console.log("Phone displayed:", document.getElementById("userPhone").outerHTML);
+
+
+    // Push to GTM
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({
+      event: "formSubmitted",
+      leadsUserData: {
+        phone_number: fullPhone
+      }
+    });
+
+
+    // Optional: Log the phone number to console for debugging
+    console.log("User Phone Number:", fullPhone);
+
+
+  } else {
+    console.warn("Phone number not found in localStorage.");
+  }
+});
+
+
+// Utility functions to get the phone number
+function getUserPhoneNumber() {
+  // Method 1: Get from element text content
+  const phoneElement = document.getElementById("userPhone");
+  if (phoneElement && phoneElement.textContent) {
+    return phoneElement.textContent;
+  }
+ 
+
+
+ 
+  return null;
+}
+
+
+// Function to copy phone number to clipboard
+function copyPhoneNumber() {
+  const phoneNumber = getUserPhoneNumber();
+  if (phoneNumber) {
+    navigator.clipboard.writeText(phoneNumber).then(function() {
+      console.log('Phone number copied to clipboard:', phoneNumber);
+      alert('Phone number copied to clipboard!');
+    }).catch(function(err) {
+      console.error('Could not copy phone number: ', err);
+    });
+  } else {
+    console.warn('No phone number found to copy');
+  }
+}
+
+
+// Function to get phone number for external use
+function getPhoneForExternalUse() {
+  return getUserPhoneNumber();
+}
+
+
+// Event listeners for debugging (optional)
+document.addEventListener("click", function(event) {
+  // If clicked on phone number element, log the phone number
+  if (event.target.id === "userPhone") {
+    console.log("Phone number clicked:", getUserPhoneNumber());
+  }
+});
+
+
+// Make functions globally accessible
+window.getUserPhoneNumber = getUserPhoneNumber;
+window.copyPhoneNumber = copyPhoneNumber;
+window.getPhoneForExternalUse = getPhoneForExternalUse;
+</script>
+
+<script src="assets/js/api.js"></script>
+<script src="assets/js/custom.js"></script>
+</body>
+</html>

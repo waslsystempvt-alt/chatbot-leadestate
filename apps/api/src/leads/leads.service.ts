@@ -1,7 +1,7 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { createHmac } from "crypto";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import {
   BrokerStatus,
+  CrmConnector,
   LeadDeliveryMethod,
   LeadDeliveryStatus,
   Microsite,
@@ -12,20 +12,18 @@ import {
 import type { LeadSubmission } from "@leadestate/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-
-const WEBHOOK_TIMEOUT_MS = 5000;
-const WEBHOOK_MAX_ATTEMPTS = 2;
+import { buildTemplateVariables, dispatchWebhook } from "../common/webhook/webhook-dispatch";
 
 export interface LeadSubmitResult {
   ok: boolean;
   delivered: boolean;
   method: "webhook" | "dashboard_notification" | "skipped";
+  webhooksAttempted: number;
+  webhooksDelivered: number;
 }
 
 @Injectable()
 export class LeadsService {
-  private readonly logger = new Logger(LeadsService.name);
-
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
@@ -34,98 +32,95 @@ export class LeadsService {
   async submit(dto: LeadSubmission): Promise<LeadSubmitResult> {
     const microsite = await this.prisma.microsite.findUnique({
       where: { id: dto.micrositeId },
-      include: { broker: true },
+      include: { broker: true, crmConnectors: { where: { isActive: true } } },
     });
     if (!microsite) throw new NotFoundException("Unknown microsite");
 
     // An inactive broker/microsite silently stops capturing leads rather
     // than showing a visible error on someone's live site.
     if (microsite.broker.status !== BrokerStatus.ACTIVE || microsite.status !== MicrositeStatus.ACTIVE) {
-      return { ok: true, delivered: false, method: "skipped" };
+      return { ok: true, delivered: false, method: "skipped", webhooksAttempted: 0, webhooksDelivered: 0 };
     }
 
-    const attribution = {
+    const connectors = microsite.crmConnectors;
+
+    if (connectors.length === 0) {
+      await this.notifyDashboard(microsite, dto);
+      await this.logDelivery(microsite, null, LeadDeliveryMethod.DASHBOARD_NOTIFICATION, LeadDeliveryStatus.DELIVERED, 1, null, dto);
+      return { ok: true, delivered: true, method: "dashboard_notification", webhooksAttempted: 0, webhooksDelivered: 0 };
+    }
+
+    const variables = buildTemplateVariables({
+      micrositeId: microsite.id,
+      fullName: dto.fullName,
+      phone: dto.phone,
+      projectName: microsite.projectName,
+      brokerName: microsite.broker.name,
+      agentName: microsite.agentName ?? undefined,
+      configuration: typeof dto.answers?.configuration === "string" ? dto.answers.configuration : undefined,
       sourceAction: dto.sourceAction,
       utmSource: dto.utmSource,
       utmMedium: dto.utmMedium,
       utmCampaign: dto.utmCampaign,
-    };
+      utmTerm: dto.utmTerm,
+      utmContent: dto.utmContent,
+      gclid: dto.gclid,
+      fbclid: dto.fbclid,
+      pageUrl: dto.pageUrl,
+    });
 
-    if (microsite.crmWebhookActive && microsite.crmWebhookUrl) {
-      const webhookResult = await this.deliverToWebhook(microsite, dto);
-      if (webhookResult.ok) {
-        await this.logDelivery(
-          microsite,
-          LeadDeliveryMethod.WEBHOOK,
-          LeadDeliveryStatus.DELIVERED,
-          webhookResult.attempts,
-          null,
-          attribution,
-        );
-        return { ok: true, delivered: true, method: "webhook" };
-      }
+    // Fan out to every attached CRM in parallel — one microsite can push
+    // the same lead to several CRMs at once (Blox + an internal system,
+    // say), each with its own payload shape, headers, and HTTP method.
+    const results = await Promise.allSettled(
+      connectors.map((connector) => this.deliverToConnector(microsite, connector, variables, dto)),
+    );
 
-      // Webhook is down/misconfigured — don't drop the lead, put it on the
-      // broker's dashboard instead so they can forward it manually.
+    const webhooksDelivered = results.filter((r) => r.status === "fulfilled" && r.value).length;
+
+    if (webhooksDelivered === 0) {
+      // Every configured CRM failed (or errored) — don't drop the lead,
+      // put it on the broker's dashboard so they can forward it manually.
       await this.notifyDashboard(microsite, dto);
-      await this.logDelivery(
-        microsite,
-        LeadDeliveryMethod.DASHBOARD_NOTIFICATION,
-        LeadDeliveryStatus.DELIVERED,
-        webhookResult.attempts,
-        webhookResult.error ?? "webhook failed",
-        attribution,
-      );
-      return { ok: true, delivered: true, method: "dashboard_notification" };
     }
 
-    // No CRM connected yet for this microsite — the dashboard is the only destination.
-    await this.notifyDashboard(microsite, dto);
-    await this.logDelivery(
-      microsite,
-      LeadDeliveryMethod.DASHBOARD_NOTIFICATION,
-      LeadDeliveryStatus.DELIVERED,
-      1,
-      null,
-      attribution,
-    );
-    return { ok: true, delivered: true, method: "dashboard_notification" };
+    return {
+      ok: true,
+      delivered: true,
+      method: webhooksDelivered > 0 ? "webhook" : "dashboard_notification",
+      webhooksAttempted: connectors.length,
+      webhooksDelivered,
+    };
   }
 
-  private async deliverToWebhook(
+  private async deliverToConnector(
     microsite: Microsite,
+    connector: CrmConnector,
+    variables: ReturnType<typeof buildTemplateVariables>,
     dto: LeadSubmission,
-  ): Promise<{ ok: boolean; attempts: number; error?: string }> {
-    const payload = JSON.stringify({ ...dto, deliveredAt: new Date().toISOString() });
-    const signature = microsite.crmWebhookSecret
-      ? createHmac("sha256", microsite.crmWebhookSecret).update(payload).digest("hex")
-      : undefined;
+  ): Promise<boolean> {
+    const result = await dispatchWebhook(
+      {
+        webhookUrl: connector.webhookUrl,
+        webhookSecret: connector.webhookSecret,
+        method: connector.method,
+        headers: connector.headers as Record<string, string> | null,
+        payloadTemplate: connector.payloadTemplate as Record<string, unknown> | null,
+      },
+      variables,
+    );
 
-    let lastError: string | undefined;
-    for (let attempt = 1; attempt <= WEBHOOK_MAX_ATTEMPTS; attempt++) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-      try {
-        const res = await fetch(microsite.crmWebhookUrl!, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(signature ? { "x-leadestate-signature": signature } : {}),
-          },
-          body: payload,
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (res.ok) return { ok: true, attempts: attempt };
-        lastError = `CRM endpoint responded ${res.status}`;
-      } catch (err) {
-        clearTimeout(timeout);
-        lastError = err instanceof Error ? err.message : "unknown network error";
-      }
-    }
+    await this.logDelivery(
+      microsite,
+      connector.name,
+      LeadDeliveryMethod.WEBHOOK,
+      result.ok ? LeadDeliveryStatus.DELIVERED : LeadDeliveryStatus.FAILED,
+      result.attempts,
+      result.ok ? null : (result.error ?? `HTTP ${result.status ?? "?"}`),
+      dto,
+    );
 
-    this.logger.warn(`Webhook delivery failed for microsite ${microsite.id}: ${lastError}`);
-    return { ok: false, attempts: WEBHOOK_MAX_ATTEMPTS, error: lastError };
+    return result.ok;
   }
 
   /**
@@ -151,29 +146,26 @@ export class LeadsService {
 
   private logDelivery(
     microsite: Microsite,
+    crmConnectorName: string | null,
     method: LeadDeliveryMethod,
     status: LeadDeliveryStatus,
     attempts: number,
     errorMessage: string | null,
-    attribution: {
-      sourceAction?: string;
-      utmSource?: string;
-      utmMedium?: string;
-      utmCampaign?: string;
-    },
+    dto: LeadSubmission,
   ) {
     return this.prisma.leadDeliveryLog.create({
       data: {
         brokerId: microsite.brokerId,
         micrositeId: microsite.id,
+        crmConnectorName,
         method,
         status,
         attempts,
         errorMessage,
-        sourceAction: attribution.sourceAction,
-        utmSource: attribution.utmSource,
-        utmMedium: attribution.utmMedium,
-        utmCampaign: attribution.utmCampaign,
+        sourceAction: dto.sourceAction,
+        utmSource: dto.utmSource,
+        utmMedium: dto.utmMedium,
+        utmCampaign: dto.utmCampaign,
       },
     });
   }
