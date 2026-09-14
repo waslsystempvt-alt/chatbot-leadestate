@@ -58,7 +58,7 @@ export function ChatWidget({ config: cfg, embedded = false }: ChatWidgetProps) {
   const [scrollMode, setScrollMode] = useState<"bottom" | "top">("bottom");
   const [avatarSrc, setAvatarSrc] = useState(cfg.agentAvatar);
 
-  const { submitLead } = useLeadSubmit(cfg, agentName);
+  const { submitLead } = useLeadSubmit(cfg);
 
   useEffect(() => {
     const el = rootRef.current;

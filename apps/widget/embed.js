@@ -114,18 +114,13 @@
     } else {
       cfg.agentAvatar = assetUrl("profile.webp");
     }
-    var scriptUrl = pick("script-url", ["script", "scriptUrl"]);
-    if (scriptUrl) cfg.scriptUrl = scriptUrl;
+    var apiBase = pick("api-base", ["apiBase", "api"]);
+    if (apiBase) cfg.apiBase = apiBase;
     var autoOpen = pick("auto-open", ["autoOpen", "autoOpenDelayMs"]);
     if (autoOpen !== "") {
       var n = parseInt(autoOpen, 10);
       if (!isNaN(n) && n >= 0) cfg.autoOpenDelayMs = n;
     }
-    var crmUrl = pick("crm-url", ["crmUrl", "crm"]);
-    if (crmUrl) cfg.crmUrl = crmUrl;
-    var formId = pick("form-id", ["formId"]);
-    if (formId) cfg.formId = formId;
-
     try {
       var qs = new URLSearchParams(window.location.search);
       var utm = {};

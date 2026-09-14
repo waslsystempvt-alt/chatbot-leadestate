@@ -3,9 +3,16 @@
 A brand-agnostic real-estate lead chatbot built with **React + Vite**. One
 Cloudflare-hosted bundle powers every microsite — pass the project's name,
 broker, agent, and brand color via `data-*` on `embed.js` (or
-`window.LEADESTATE_EMBED`) and leads land in a Google Sheet via Google Apps
-Script. The widget mounts **directly on the page** (no iframe), which fixes
-scroll and mobile layout issues.
+`window.LEADESTATE_EMBED`) and every captured lead POSTs to the LeadEstate
+API (`apps/api`), which fans it out to whatever CRM connectors that
+microsite has attached (see `apps/api/src/crm-connectors`). The widget
+mounts **directly on the page** (no iframe), which fixes scroll and mobile
+layout issues.
+
+> The old Google-Sheets-only delivery path (Apps Script webhook +
+> `data-crm-url`) has been replaced by this API-backed flow. The Apps
+> Script source is kept under `legacy/google-apps-script/` for reference
+> only — the widget no longer calls it.
 
 ## Project layout
 
@@ -36,32 +43,25 @@ Deploy the contents of **`dist/`** to Cloudflare Pages / Workers.
 
 ## Where leads go
 
-Every chatbot lead is appended as a row to a Google Sheet via a Google Apps
-Script Web App. That's the only backend — no CRM, no extra services.
+Every chatbot lead is `POST`ed to `${apiBase}/public/leads` on the
+LeadEstate API. From there `LeadsService` looks up the microsite, and:
 
-## 1) Backend — Google Apps Script
+- fans the lead out in parallel to every active `CrmConnector` attached to
+  that microsite (each with its own webhook URL, headers, HTTP method, and
+  a custom payload template — see `packages/shared-types`'s
+  `renderTemplate`/`WEBHOOK_PRESETS`), or
+- if no connector is attached (or all of them fail), drops a `Notification`
+  on the broker's dashboard instead, so the lead is never silently lost.
 
-1. Create a Google Sheet. Copy its ID from the URL
-   (`https://docs.google.com/spreadsheets/d/`**`SHEET_ID`**`/edit`).
-2. Open <https://script.google.com> → **New project** → paste the contents of
-   `google-apps-script/LeadsWebhook.gs`.
-3. **Project Settings → Script properties → Add property**:
-   - Name: `SHEET_ID`
-   - Value: your sheet id
-4. *(Optional but recommended)* Hit **Run ▶** on the `setup` function once to
-   grant permissions and write a smoke-test row.
-5. **Deploy → New deployment → Web app**:
-   - Execute as: **Me**
-   - Who has access: **Anyone**
-6. Copy the Web App URL. It looks like
-   `https://script.google.com/macros/s/AKfy.../exec`.
+A broker manages their connectors from the dashboard (`apps/dashboard`) —
+create one, pick a preset (LeadEstate standard / Blox / custom schema) or
+write your own `{{variable}}` template, then attach it to any of their
+microsites.
 
-The script auto-creates a `Leads` tab with these columns on first use:
+## 1) Backend — the LeadEstate API
 
-`Timestamp | MicrositeId | ProjectName | BrokerName | AgentName | Name | Phone | Configuration | SourceAction | Budget | PropertyType`
-
-If you add fields later, just extend `EXPECTED_HEADERS`; missing columns are
-appended to the sheet on the next request — existing rows are untouched.
+Run `apps/api` (see its own README) and set `apiBase` for the widget to
+point at it — see the `data-api-base` attribute below.
 
 ## 2) Frontend — deploy to Cloudflare
 
@@ -97,9 +97,7 @@ Paste just before `</body>`:
   data-agent="Ziya"
   data-primary="#047857"
   data-avatar=""
-  data-script-url=""
-  data-crm-url="https://leads-api.leadestate.in/api/lead"
-  data-form-id="chatbot-sky-estates"
+  data-api-base="https://YOUR-API-DOMAIN"
   data-redirect-url="thankyou.html"
   async></script>
 ```
@@ -108,20 +106,18 @@ Paste just before `</body>`:
 
 | Attribute | Same as test form | Purpose |
 | --- | --- | --- |
-| `data-ms` | Microsite ID | Stable slug saved on every lead. |
+| `data-ms` | Microsite ID | Stable slug saved on every lead — must match a `Microsite.slug` in the API. |
 | `data-project` | Project name | Shown in the chat intro. |
-| `data-broker` | Broker / company | Company line + Sheet column. |
-| `data-agent` | Agent name | Header + teaser + Sheet column. |
+| `data-broker` | Broker / company | Company line in the greeting. |
+| `data-agent` | Agent name | Header + teaser + greeting. |
 | `data-primary` | Brand color | Hex with or without `#`. |
 | `data-avatar` | Agent avatar URL | Optional photo URL. |
-| `data-script-url` | Apps Script URL | Optional; overrides Sheet webhook per site. |
-| `data-crm-url` | CRM endpoint URL | **Optional.** If set, lead also POSTs to this CRM in parallel with the sheet. |
-| `data-form-id` | CRM form ID | **Optional.** Sent in CRM payload. Defaults to `chatbot-{ms}`. |
+| `data-api-base` | LeadEstate API base URL | Where leads are POSTed (`${apiBase}/public/leads`). Required for real delivery. |
 | `data-redirect-url` | Thank-you URL | **Optional.** When set, the microsite page navigates here after the lead is saved (same as the existing form). |
 | `data-redirect-delay` | Redirect delay (ms) | **Optional.** Defaults to `500`. |
 | `data-auto-open` | (optional) | Desktop auto-open delay in ms; `0` = off. |
 | `data-gtm-event` | (optional) | Custom dataLayer event name. Default `formSubmitted`. |
-| `data-test` | (optional) | Set to `"1"` to force test mode for this site (no GTM / no CRM). |
+| `data-test` | (optional) | Set to `"1"` to force test mode for this site (no GTM / no API submission). |
 
 ### Option B — `window.LEADESTATE_EMBED` (when the builder strips `data-*`)
 
@@ -145,32 +141,42 @@ Some page builders remove custom attributes from `<script>`. Put a tiny inline b
 
 Any non-empty `data-*` on the external script tag still **overrides** `LEADESTATE_EMBED`.
 
-## 3a) Send leads to a CRM (in addition to the Google Sheet)
+## 3a) Send leads to a CRM
 
-Add **one** attribute — `data-crm-url` — to forward every chatbot lead to your CRM
-in parallel with the existing Google Sheet. The sheet keeps working unchanged.
+There's no `data-crm-url` attribute anymore — CRM delivery is configured
+**per broker, in the dashboard**, not per script tag:
 
-```html
-<script
-  src="https://YOUR-CHATBOT-DOMAIN/embed.js"
-  data-ms="rayansh"
-  data-project="Rayansh"
-  data-broker="Homesfy"
-  data-agent="Ziya"
-  data-primary="#047857"
-  data-crm-url="https://leads-api.leadestate.in/api/lead"
-  async></script>
-```
+1. In the dashboard, create a `CrmConnector` (name, webhook URL, HTTP
+   method, optional custom headers, and a payload template — pick a preset
+   or write your own `{{variable}}` template).
+2. Attach that connector to any of the broker's microsites. One connector
+   can be reused across many microsites; one microsite can have several
+   connectors attached at once (e.g. Blox + an internal Zapier hook) — the
+   API fans a lead out to all of them in parallel.
+3. Use **Test webhook** in the dashboard to send a sample payload through
+   the exact same code path a real lead uses, before going live.
 
-### CRM payload (sent as JSON `POST`)
+The widget itself only needs `data-api-base` pointed at the API — it has no
+idea which (if any) CRMs are attached.
 
-`embed.js` reads UTM params, `pageUrl`, and `userAgent` from the **parent
-microsite** and passes them into the widget config. The chatbot then sends:
+### What the API sends
+
+For a connector's `payloadTemplate`, every `{{variable}}` is filled in from
+the captured lead — see `TEMPLATE_VARIABLES` in `packages/shared-types` for
+the full list (`fullName`, `phone`, `utmSource`, `pageUrl`, `timestamp`,
+etc.). Leaving `payloadTemplate` unset falls back to the LeadEstate standard
+shape:
 
 ```json
 {
+  "micrositeId": "rayansh",
   "fullName": "Ziya",
   "phone": "9876543210",
+  "projectName": "Rayansh",
+  "brokerName": "Homesfy",
+  "agentName": "Ziya",
+  "configuration": "2 BHK",
+  "sourceAction": "Prices & Floor Plans",
   "utmSource": "google",
   "utmMedium": "cpc",
   "utmCampaign": "summer-launch",
@@ -178,39 +184,26 @@ microsite** and passes them into the widget config. The chatbot then sends:
   "utmContent": "",
   "gclid": "Cj0KCQ...",
   "fbclid": "",
-  "formId": "chatbot-rayansh",
-  "micrositeId": "rayansh",
-  "projectName": "Rayansh",
-  "brokerName": "Homesfy",
-  "agentName": "Ziya",
-  "configuration": "2 BHK",
-  "sourceAction": "Prices & Floor Plans",
   "pageUrl": "https://rayansh.com/?utm_source=google",
-  "userAgent": "Mozilla/5.0 ...",
   "timestamp": "2026-05-11T10:26:30.777Z"
 }
 ```
 
 ### Behaviour
 
-| Sheet | CRM URL set | CRM | Result |
-| --- | --- | --- | --- |
-| ✅ ok | ✅ | ✅ ok | Lead saved to **both**. UI shows success. |
-| ✅ ok | ✅ | ❌ fail | Lead saved to **sheet**. UI shows success. CRM error logged to console. |
-| ✅ ok | ❌ blank | — | Sheet only. Existing behaviour. |
-| ❌ fail | ✅ | ✅ ok | Lead saved to **CRM**. UI shows success. Sheet error logged. |
-| ❌ fail | ✅ | ❌ fail | UI shows failure with both errors. |
+| Connectors attached | Delivery result |
+| --- | --- |
+| None | Lead shows up as a dashboard `Notification` — the broker forwards it manually. |
+| One or more, at least one succeeds | Lead delivered to whichever connectors accepted it; failures are logged per-connector but don't block the others. |
+| One or more, all fail | Falls back to a dashboard `Notification` so the lead is never silently lost. |
 
-### Test mode skips CRM
+### Test mode
 
-Visit the microsite with `?test=1` and CRM submission is **skipped**
-(`[LeadEstate] TEST MODE — skipping CRM submission.` in console). The Google
-Sheet still receives the lead so you can verify the full flow.
-
-### Different CRM per microsite
-
-Just change `data-crm-url` (and optionally `data-form-id`) per site. The
-chatbot doesn't care — it just POSTs JSON to whatever endpoint you provide.
+Visit the microsite with `?test=1` and lead submission is **skipped
+entirely** (`[LeadEstate] TEST MODE — skipping lead submission.` in
+console) — nothing reaches the API. Use the dashboard's own **Test
+webhook** button on a connector to verify delivery without going through
+the chat UI.
 
 ## 3b) Track chatbot leads in GTM (Google Ads / GA4 / Meta conversions)
 
@@ -286,11 +279,11 @@ full-page preview without `embed.js`. Supported params are listed below.
 | `agent` / `agentName`       | The person shown in header, teaser, intro.          | `Ziya`               |
 | `primary` / `color`         | Brand hex (with or without `#`).                    | `896b3b`             |
 | `avatar` / `agentAvatar`    | URL-encoded agent photo URL.                        | `https%3A%2F%2F...`  |
-| `script` / `scriptUrl`      | Override the Apps Script URL per microsite.         | `https%3A%2F%2F...`  |
+| `apiBase` / `api`           | LeadEstate API base URL.                            | `https%3A%2F%2F...`  |
 | `autoOpen`                  | Desktop auto-open delay in ms. `0` disables.        | `0` or `5000`        |
 
 Greeting bubble reads **"Hi, I'm `{agent}` from `{broker}` 👋"**.
-Header shows **`{agent}`**. Lead rows record both `BrokerName` and `AgentName`.
+Header shows **`{agent}`**.
 
 ### Alternative: configure via JS object
 
@@ -331,11 +324,10 @@ python3 -m http.server 5500
 
 | Symptom in chat                                                 | Likely cause / fix                                                                                   |
 | ----------------------------------------------------------------| ---------------------------------------------------------------------------------------------------- |
-| `... — SHEET_ID not configured`                                 | Set Script property `SHEET_ID`, or `SHEET_ID_FALLBACK` in the .gs file. Redeploy a **new version**.  |
-| `... — You do not have permission to call SpreadsheetApp.openById` | Share the sheet (Editor) with the same Google account selected under "Execute as: Me".            |
-| `... — Missing script URL`                                      | `cfg.scriptUrl` is empty or still placeholder. Set it via `DEFAULT_CHAT.scriptUrl` or `?script=`.    |
-| CORS preflight failure                                          | The widget already POSTs as `text/plain` to avoid this. If you changed it, revert.                   |
-| Edits to `.gs` don't take effect                                | Apps Script caches deployments. **Deploy → Manage deployments → ✎ → New version → Deploy.**         |
+| `[LeadEstate] Lead submission failed: Unknown microsite`        | `data-ms` doesn't match any `Microsite.slug` in the API's database for this broker.                  |
+| `[LeadEstate] Lead submission failed: Request failed (0)` / network error | `data-api-base` is wrong, unreachable, or the API isn't running. Check the Network tab.    |
+| Success shown, but no CRM notification/webhook fired            | No `CrmConnector` is attached to this microsite — check the dashboard. Falls back to a dashboard `Notification`, which is expected, not a bug. |
+| CORS error in console                                           | The API enables permissive CORS (`main.ts`) by default; if you changed that, re-check its origin config. |
 
 ## License
 

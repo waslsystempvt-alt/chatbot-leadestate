@@ -22,11 +22,11 @@ export interface ChatConfig {
   brokerName: string;
   agentName: string;
   theme: ChatTheme;
-  scriptUrl: string;
+  /** Base URL of the LeadEstate API — leads POST to `${apiBase}/public/leads`,
+   * which fans out to whatever CrmConnectors the microsite has attached. */
+  apiBase: string;
   agentAvatar: string;
   autoOpenDelayMs: number;
-  crmUrl?: string;
-  formId?: string;
   pageUrl?: string;
   userAgent?: string;
   utm?: UtmParams;
@@ -38,8 +38,7 @@ export const DEFAULT_CHAT: ChatConfig = {
   brokerName: "Homesfy",
   agentName: "Divya",
   theme: { primary: "#047857" },
-  scriptUrl:
-    "https://script.google.com/macros/s/AKfycbyUdJSAbLF5Z0eIezN3Xqqyv3-AvLV5jz0u8AylsS3qRAq1bjYPCQgapOfybgXs_le-Aw/exec",
+  apiBase: "http://localhost:4001",
   agentAvatar: "profile.webp",
   autoOpenDelayMs: 8000,
 };
@@ -80,8 +79,8 @@ export function readQueryChatConfig(): Partial<ChatConfig> {
     const primary = p.get("primary") || p.get("color");
     const ph = normalizePrimaryHex(primary);
     if (ph) out.theme = { primary: ph };
-    const script = p.get("scriptUrl") || p.get("script");
-    if (script) out.scriptUrl = decodeURIComponent(script);
+    const apiBase = p.get("apiBase") || p.get("api");
+    if (apiBase) out.apiBase = decodeURIComponent(apiBase);
     const avatar = p.get("avatar") || p.get("agentAvatar");
     if (avatar) out.agentAvatar = decodeURIComponent(avatar);
     const autoOpen = p.get("autoOpen") || p.get("autoOpenDelayMs");
@@ -89,10 +88,6 @@ export function readQueryChatConfig(): Partial<ChatConfig> {
       const n = parseInt(autoOpen, 10);
       if (!Number.isNaN(n) && n >= 0) out.autoOpenDelayMs = n;
     }
-    const crmUrl = p.get("crmUrl") || p.get("crm");
-    if (crmUrl) out.crmUrl = decodeURIComponent(crmUrl);
-    const formId = p.get("formId");
-    if (formId) out.formId = decodeURIComponent(formId);
     const pageUrl = p.get("pageUrl");
     if (pageUrl) out.pageUrl = decodeURIComponent(pageUrl);
     const ua = p.get("ua");
@@ -152,7 +147,6 @@ export function buildBotCopy(agentName: string, brokerLabel: string) {
       "Invalid phone number. For Indian numbers, enter a valid 10-digit number starting with 6-9.",
     submitSuccessThanks: "Thank you",
     submitSuccessDone: "Done! Our RM will call you shortly.",
-    submitFailure:
-      "Saved on our side, but the Sheet didn't sync. Please check the script URL and deployment access.",
+    submitFailure: "Something went wrong saving your details. Please try again in a moment.",
   };
 }

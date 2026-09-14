@@ -7,15 +7,61 @@ services:
       POSTGRES_PASSWORD: leadestate
       POSTGRES_DB: leadestate
     ports:
-      - "5432:5432"
+      # host 5433 -> container 5432: this machine already has an unrelated
+      # stack (hr_postgres) bound to host 5432.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leadestate"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # host 6380 -> container 6379: this machine's hr_redis already owns 6379.
+      - "6380:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://leadestate:leadestate@postgres:5432/leadestate
+      JWT_SECRET: dev-only-local-secret-2fdd7e4e8ac94d6cb59a5b3c1a0c9e3b
+      PORT: 4000
+      SUPER_ADMIN_EMAIL: admin@leadestate.local
+      SUPER_ADMIN_PASSWORD: changeme123
+    ports:
+      # host 4001 -> container 4000: this machine's hr_api_gateway already owns 4000.
+      - "4001:4000"
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+      args:
+        VITE_API_BASE: http://localhost:4001
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5174:80"
+
+  widget:
+    build:
+      context: .
+      dockerfile: apps/widget/widget/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:80"
 
 volumes:
   pgdata:
