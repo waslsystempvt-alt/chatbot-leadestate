@@ -114,7 +114,7 @@
     } else {
       cfg.agentAvatar = assetUrl("profile.webp");
     }
-    var apiBase = pick("api-base", ["apiBase", "api"]);
+    var apiBase = pick("api-base", ["apiBase", "api"]) || pick("api", ["api"]);
     if (apiBase) cfg.apiBase = apiBase;
     var autoOpen = pick("auto-open", ["autoOpen", "autoOpenDelayMs"]);
     if (autoOpen !== "") {
