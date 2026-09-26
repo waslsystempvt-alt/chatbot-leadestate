@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "cd ../.. && npm install && npm run build --workspace packages/shared-types && npx prisma generate --schema apps/api/prisma/schema.prisma && npm run build --workspace apps/api",
+  "outputDirectory": "dist",
+  "functions": {
+    "dist/src/main.js": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/src/main.js"
+    }
+  ]
+}
