@@ -10,6 +10,7 @@ import { MicrositesModule } from "./microsites/microsites.module";
 import { LeadsModule } from "./leads/leads.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { CrmConnectorsModule } from "./crm-connectors/crm-connectors.module";
+import { HealthController } from "./health.controller";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CrmConnectorsModule } from "./crm-connectors/crm-connectors.module";
     NotificationsModule,
     LeadsModule,
   ],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
