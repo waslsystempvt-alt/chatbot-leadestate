@@ -30,8 +30,10 @@ export class LeadsService {
   ) {}
 
   async submit(dto: LeadSubmission): Promise<LeadSubmitResult> {
-    const microsite = await this.prisma.microsite.findUnique({
-      where: { id: dto.micrositeId },
+    const microsite = await this.prisma.microsite.findFirst({
+      where: {
+        OR: [{ id: dto.micrositeId }, { slug: dto.micrositeId }],
+      },
       include: { broker: true, crmConnectors: { where: { isActive: true } } },
     });
     if (!microsite) throw new NotFoundException("Unknown microsite");
